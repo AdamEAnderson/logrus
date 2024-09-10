@@ -3,6 +3,7 @@ package logrus_test
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -95,4 +96,38 @@ func TestWriterSplitsMax64KB(t *testing.T) {
 	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
 	// we should have 4 lines because we wrote more than 64 KB each time
 	assert.Len(t, lines, 4, "logger printed incorrect number of lines")
+}
+
+func TestWriterSplitsLargeInputs(t *testing.T) {
+	buf := bytes.NewBuffer(nil)
+	logger := logrus.New()
+	logger.Formatter = &logrus.TextFormatter{
+		DisableColors:    true,
+		DisableTimestamp: true,
+	}
+	logger.SetOutput(buf)
+	writer := logger.Writer()
+
+	// write many small lines totalling more than 64KB
+	// 1000 lines each at least 100 bytes long, so at least 100KB
+	sb := strings.Builder{}
+	longSuffix := ""
+	for i := 0; i < 100; i++ {
+		longSuffix += "a"
+	}
+	for i := 0; i < 1000; i++ {
+		sb.WriteString(fmt.Sprintf("line_%d_%s\n", i, longSuffix))
+	}
+	inputBytes := []byte(sb.String())
+	bytesWritten, err := writer.Write(inputBytes)
+	assert.NoError(t, err, "writer.Write failed")
+	assert.Equal(t, len(inputBytes), bytesWritten, "bytes written")
+	writer.Close()
+	// Test is flaky because it writes in another goroutine,
+	// we need to make sure to wait a bit so all write are done.
+	time.Sleep(500 * time.Millisecond)
+
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	// we should have the 1000 lines we wrote in
+	assert.Len(t, lines, 1000, "logger printed incorrect number of lines")
 }

@@ -72,11 +72,20 @@ func (entry *Entry) writerScanner(reader *io.PipeReader, printFunc func(args ...
 	// Define a split function to split the input into chunks of up to 64KB
 	chunkSize := bufio.MaxScanTokenSize // 64KB
 	splitFunc := func(data []byte, atEOF bool) (int, []byte, error) {
+		linesAdvance, linesToken, linesErr := bufio.ScanLines(data, atEOF)
+		if linesErr != nil {
+			return 0, nil, linesErr
+		}
+		if linesToken != nil || linesAdvance > 0 {
+			// We've made progress, so we can return the ScanLines result
+			return linesAdvance, linesToken, nil
+		}
 		if len(data) >= chunkSize {
+			// No progress made, and we're at the chunk size, so return a chunk
 			return chunkSize, data[:chunkSize], nil
 		}
-
-		return bufio.ScanLines(data, atEOF)
+		// Get more data
+		return 0, nil, nil
 	}
 
 	// Use the custom split function to split the input
